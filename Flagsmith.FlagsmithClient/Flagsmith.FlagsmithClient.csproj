@@ -2,7 +2,8 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
-        <LangVersion>8</LangVersion>
+        <!-- 9 for init-only setters, required to build HybridCacheEntryOptions -->
+        <LangVersion>9</LangVersion>
         <DefaultItemExcludes>$(DefaultItemExcludes);example/**;</DefaultItemExcludes>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <PackageId>Flagsmith</PackageId>
@@ -22,6 +23,8 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <!-- Carries the HybridCache abstraction only; the host supplies the implementation -->
+        <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="9.0.0"/>
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.0"/>
         <PackageReference Include="Newtonsoft.Json" Version="13.0.1"/>
         <PackageReference Include="Polly" Version="7.2.3"/>

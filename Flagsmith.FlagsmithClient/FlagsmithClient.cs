@@ -45,6 +45,7 @@ namespace Flagsmith
         private AnalyticsProcessor? _analyticsProcessor;
         private RegularFlagListCache? _regularFlagListCache;
         private ConcurrentDictionary<string, IdentityFlagListCache>? _flagListCacheDictionary;
+        private HybridFlagListCache? _hybridFlagListCache;
 
         private void Initialise()
         {
@@ -55,6 +56,14 @@ namespace Flagsmith
             else if (_config.DefaultFlagHandler != null && _config.OfflineHandler != null)
             {
                 throw new Exception("ValueError: Cannot use both defaultFlagHandler and offlineHandler.");
+            }
+            else if (_config.CacheConfig.Enabled && _config.HybridCacheConfig.Enabled)
+            {
+                throw new Exception("ValueError: Cannot use both cacheConfig and hybridCacheConfig.");
+            }
+            else if (_config.HybridCacheConfig.Enabled && _config.HybridCacheConfig.Cache is null)
+            {
+                throw new Exception("ValueError: hybridCacheConfig.Cache must be provided to use HybridCache.");
             }
 
             if (_config.OfflineHandler != null)
@@ -92,6 +101,12 @@ namespace Flagsmith
                     _config.CacheConfig.DurationInMinutes);
                 _flagListCacheDictionary = new ConcurrentDictionary<string, IdentityFlagListCache>();
             }
+            else if (_config.HybridCacheConfig.Enabled)
+            {
+                _hybridFlagListCache = new HybridFlagListCache(_config.HybridCacheConfig,
+                    _config.EnvironmentKey,
+                    flags => Flags.FromApiFlag(_analyticsProcessor, _config.DefaultFlagHandler, flags));
+            }
         }
 
         public FlagsmithClient(FlagsmithConfiguration configuration)
@@ -108,6 +123,11 @@ namespace Flagsmith
             if (_config.CacheConfig.Enabled)
             {
                 return _regularFlagListCache!.GetLatestFlags(GetFeatureFlagsFromCorrectSource);
+            }
+
+            if (_hybridFlagListCache != null)
+            {
+                return await _hybridFlagListCache.GetEnvironmentFlags(GetFeatureFlagsFromCorrectSource).ConfigureAwait(false);
             }
 
             return await GetFeatureFlagsFromCorrectSource().ConfigureAwait(false);
@@ -138,6 +158,11 @@ namespace Flagsmith
                 var flagListCache = GetFlagListCacheByIdentity(identityWrapper);
 
                 return flagListCache.GetLatestFlags(GetIdentityFlagsFromCorrectSource);
+            }
+
+            if (_hybridFlagListCache != null)
+            {
+                return await _hybridFlagListCache.GetIdentityFlags(identityWrapper, GetIdentityFlagsFromCorrectSource).ConfigureAwait(false);
             }
 
             if (_config.OfflineMode)

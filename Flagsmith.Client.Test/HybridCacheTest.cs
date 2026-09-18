@@ -1,0 +1,290 @@
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using Xunit;
+
+namespace Flagsmith.FlagsmithClientTest
+{
+    public class HybridCacheTest
+    {
+        private const string Identifier = "identifier";
+
+        private static HybridCache CreateHybridCache()
+        {
+            var services = new ServiceCollection();
+            services.AddHybridCache();
+            return services.BuildServiceProvider().GetRequiredService<HybridCache>();
+        }
+
+        private static Mock<HttpClient> MockIdentityResponse()
+        {
+            return HttpMocker.MockHttpResponse(HttpStatusCode.OK, Fixtures.ApiIdentityResponse, false);
+        }
+
+        private static FlagsmithClient CreateClient(
+            Mock<HttpClient> mockHttpClient,
+            Action<HybridCacheConfig> configure = null)
+        {
+            var hybridCacheConfig = new HybridCacheConfig(CreateHybridCache());
+            configure?.Invoke(hybridCacheConfig);
+
+            return new FlagsmithClient(new FlagsmithConfiguration
+            {
+                EnvironmentKey = Fixtures.ApiKey,
+                HttpClient = mockHttpClient.Object,
+                HybridCacheConfig = hybridCacheConfig
+            });
+        }
+
+        private static List<ITrait> Traits(params (string Key, string Value)[] traits)
+        {
+            var result = new List<ITrait>();
+            foreach (var trait in traits)
+            {
+                result.Add(new Trait(trait.Key, trait.Value));
+            }
+
+            return result;
+        }
+
+        [Fact]
+        public void TestCannotEnableBothCacheConfigAndHybridCacheConfig()
+        {
+            // Given
+            var config = new FlagsmithConfiguration
+            {
+                EnvironmentKey = Fixtures.ApiKey,
+                CacheConfig = new CacheConfig(true),
+                HybridCacheConfig = new HybridCacheConfig(CreateHybridCache())
+            };
+
+            // Then
+            var exception = Assert.Throws<Exception>(() => new FlagsmithClient(config));
+            Assert.Equal("ValueError: Cannot use both cacheConfig and hybridCacheConfig.", exception.Message);
+        }
+
+        [Fact]
+        public void TestCannotEnableHybridCacheWithoutACacheInstance()
+        {
+            // Given
+            var config = new FlagsmithConfiguration
+            {
+                EnvironmentKey = Fixtures.ApiKey,
+                HybridCacheConfig = new HybridCacheConfig { Enabled = true }
+            };
+
+            // Then
+            var exception = Assert.Throws<Exception>(() => new FlagsmithClient(config));
+            Assert.Equal("ValueError: hybridCacheConfig.Cache must be provided to use HybridCache.", exception.Message);
+        }
+
+        [Fact]
+        public async Task TestEnvironmentFlagsAreServedFromTheCache()
+        {
+            // Given
+            var mockHttpClient = HttpMocker.MockHttpResponse(HttpStatusCode.OK, Fixtures.ApiFlagResponse, false);
+            var client = CreateClient(mockHttpClient);
+
+            // When
+            await client.GetEnvironmentFlags();
+            var flags = (await client.GetEnvironmentFlags()).AllFlags();
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Get, "/api/v1/flags/", Times.Once);
+            Assert.True(flags[0].Enabled);
+            Assert.Equal("some-value", flags[0].Value);
+            Assert.Equal("some_feature", flags[0].GetFeatureName());
+        }
+
+        [Fact]
+        public async Task TestIdentityFlagsAreServedFromTheCacheWhenTraitsAreUnchanged()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient);
+            var traits = Traits(("foo", "bar"));
+
+            // When
+            await client.GetIdentityFlags(Identifier, traits);
+            var flags = (await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")))).AllFlags();
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", Times.Once);
+            Assert.True(flags[0].Enabled);
+            Assert.Equal("some-value", flags[0].Value);
+            Assert.Equal("some_feature", flags[0].GetFeatureName());
+        }
+
+        [Fact]
+        public async Task TestIdentityFlagsAreFetchedAgainWhenATraitIsAdded()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient);
+
+            // When
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar"), ("baz", "qux")));
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", () => Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task TestIdentityFlagsAreFetchedAgainWhenATraitValueChanges()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient);
+
+            // When
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "changed")));
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", () => Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task TestIdentityFlagsAreFetchedAgainWhenATraitBecomesTransient()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient);
+
+            // When
+            await client.GetIdentityFlags(Identifier, new List<ITrait> { new Trait("foo", "bar") });
+            await client.GetIdentityFlags(Identifier, new List<ITrait> { new Trait("foo", "bar", true) });
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", () => Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task TestIdentityFlagsStayCachedWhenATraitIsOmitted()
+        {
+            // Given: Flagsmith keeps traits it has already been told about, so dropping one from the
+            // request cannot change the flags it returns.
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient);
+
+            // When
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar"), ("baz", "qux")));
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
+            await client.GetIdentityFlags(Identifier, new List<ITrait>());
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", Times.Once);
+        }
+
+        [Fact]
+        public async Task TestTraitsKnownBeforeARefreshAreStillKnownAfterIt()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient);
+
+            // When: the second call adds a trait, so it refreshes. The third call carries only the
+            // trait from the first one, which the refreshed entry must still remember.
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
+            await client.GetIdentityFlags(Identifier, Traits(("baz", "qux")));
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", () => Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task TestIdentityFlagsStayCachedOnTraitChangesWhenRefreshOnTraitChangesIsDisabled()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient, config => config.RefreshOnTraitChanges = false);
+
+            // When
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "changed"), ("baz", "qux")));
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", Times.Once);
+        }
+
+        [Fact]
+        public async Task TestIdentityFlagsAreFetchedAgainOnceTheCacheEntryExpires()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient, config =>
+            {
+                config.Duration = TimeSpan.FromMilliseconds(100);
+                config.RefreshOnTraitChanges = false;
+            });
+
+            // When
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
+            await Task.Delay(TimeSpan.FromMilliseconds(300));
+            await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", () => Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task TestIdentitiesAreCachedSeparately()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient);
+
+            // When
+            await client.GetIdentityFlags("first");
+            await client.GetIdentityFlags("second");
+            await client.GetIdentityFlags("first");
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", () => Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task TestTransientIdentitiesAreCachedSeparatelyFromPersistedOnes()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var client = CreateClient(mockHttpClient);
+
+            // When
+            await client.GetIdentityFlags(Identifier, null);
+            await client.GetIdentityFlags(Identifier, null, true);
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", () => Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task TestClientsWithDifferentEnvironmentKeysDoNotShareCacheEntries()
+        {
+            // Given
+            var mockHttpClient = MockIdentityResponse();
+            var sharedCache = CreateHybridCache();
+
+            FlagsmithClient ClientFor(string environmentKey) => new FlagsmithClient(new FlagsmithConfiguration
+            {
+                EnvironmentKey = environmentKey,
+                HttpClient = mockHttpClient.Object,
+                HybridCacheConfig = new HybridCacheConfig(sharedCache)
+            });
+
+            // When
+            await ClientFor("first-environment-key").GetIdentityFlags(Identifier);
+            await ClientFor("second-environment-key").GetIdentityFlags(Identifier);
+
+            // Then
+            mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", () => Times.Exactly(2));
+        }
+    }
+}
