@@ -259,6 +259,59 @@ namespace Flagsmith.FlagsmithClientTest
             mockHttpClient.VerifyHttpRequest(HttpMethod.Post, "/api/v1/identities/", () => Times.Exactly(2));
         }
 
+        /// <summary>
+        /// HybridCache rejects a non-positive expiration when it writes an entry, which would
+        /// otherwise surface as an exception from every flag read rather than at construction.
+        /// </summary>
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void TestCannotUseANonPositiveDuration(int minutes)
+        {
+            // Given
+            var config = new FlagsmithConfiguration
+            {
+                EnvironmentKey = Fixtures.ApiKey,
+                HybridCacheConfig = new HybridCacheConfig(CreateHybridCache())
+                {
+                    Duration = TimeSpan.FromMinutes(minutes)
+                }
+            };
+
+            // Then
+            var exception = Assert.Throws<Exception>(() => new FlagsmithClient(config));
+            Assert.Equal("ValueError: hybridCacheConfig.Duration must be positive.", exception.Message);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public void TestCannotUseANonPositiveLocalCacheDuration(int minutes)
+        {
+            // Given
+            var config = new FlagsmithConfiguration
+            {
+                EnvironmentKey = Fixtures.ApiKey,
+                HybridCacheConfig = new HybridCacheConfig(CreateHybridCache())
+                {
+                    LocalCacheDuration = TimeSpan.FromMinutes(minutes)
+                }
+            };
+
+            // Then
+            var exception = Assert.Throws<Exception>(() => new FlagsmithClient(config));
+            Assert.Equal("ValueError: hybridCacheConfig.LocalCacheDuration must be positive.", exception.Message);
+        }
+
+        [Fact]
+        public void TestAnUnsetLocalCacheDurationIsAccepted()
+        {
+            var mockHttpClient = MockIdentityResponse();
+
+            // Then: no throw
+            _ = CreateClient(mockHttpClient, config => config.LocalCacheDuration = null);
+        }
+
         [Fact]
         public void TestRefreshOnTraitChangesIsOffByDefault()
         {

@@ -66,6 +66,16 @@ namespace Flagsmith
             {
                 throw new Exception("ValueError: hybridCacheConfig.Cache must be provided to use HybridCache.");
             }
+            // HybridCache rejects a non-positive expiration when it writes, and that throw would
+            // otherwise surface from every flag read rather than from here.
+            else if (_config.HybridCacheConfig.Enabled && _config.HybridCacheConfig.Duration <= TimeSpan.Zero)
+            {
+                throw new Exception("ValueError: hybridCacheConfig.Duration must be positive.");
+            }
+            else if (_config.HybridCacheConfig.Enabled && _config.HybridCacheConfig.LocalCacheDuration <= TimeSpan.Zero)
+            {
+                throw new Exception("ValueError: hybridCacheConfig.LocalCacheDuration must be positive.");
+            }
 
             if (_config.OfflineHandler != null)
             {
