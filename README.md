@@ -41,14 +41,22 @@ var flagsmith = new FlagsmithClient(new FlagsmithConfiguration
 Flagsmith evaluates an identity against the traits it holds for it, and it only learns of a trait
 when the SDK sends it. A cached flag list would therefore hide trait changes until it expired.
 
-`RefreshOnTraitChanges`, enabled by default, prevents that: a call to `GetIdentityFlags` that carries
-a trait Flagsmith has not been told about, or a new value for one it has, discards the cached entry
-and fetches again, so the change reaches Flagsmith immediately. Traits that are merely absent from a
-call do not trigger a refresh — Flagsmith keeps the traits it already holds, so omitting one cannot
-change the flags it returns, and neither can sending one that is unchanged.
+`RefreshOnTraitChanges` opts in to preventing that: a call to `GetIdentityFlags` that carries a trait
+Flagsmith has not been told about, or a new value for one it has, discards the cached entry and
+fetches again, so the change reaches Flagsmith immediately. Traits that are merely absent from a call
+do not trigger a refresh — Flagsmith keeps the traits it already holds, so omitting one cannot change
+the flags it returns, and neither can sending one that is unchanged.
 
-Set `RefreshOnTraitChanges = false` to opt out, in which case cached flags are only ever refreshed
-once `Duration` has elapsed.
+```csharp
+HybridCacheConfig = new HybridCacheConfig(hybridCache)
+{
+    RefreshOnTraitChanges = true,
+}
+```
+
+It is off by default, which keeps evaluation stateless and consistent with the other server-side
+SDKs: cached flags are then only ever refreshed once `Duration` has elapsed, and a trait change waits
+that duration out.
 
 ### Serialization
 

@@ -61,13 +61,15 @@ namespace Flagsmith
         public string KeyPrefix { get; set; } = "flagsmith";
 
         /// <summary>
-        /// When enabled (the default), cached identity flags are discarded and fetched again as soon as
-        /// a request carries a trait Flagsmith has not been told about, or a new value for one it has.
-        /// This guarantees such trait changes reach Flagsmith instead of waiting out <see cref="Duration"/>.
+        /// When enabled, cached identity flags are discarded and fetched again as soon as a request
+        /// carries a trait Flagsmith has not been told about, or a new value for one it has. This
+        /// guarantees such trait changes reach Flagsmith instead of waiting out <see cref="Duration"/>.
         /// Traits that are merely absent from a request do not trigger a refresh: Flagsmith keeps the
         /// traits it already holds, so omitting one cannot change the flags it returns.
-        /// When disabled, cached flags are only ever refreshed once <see cref="Duration"/> has elapsed.
+        /// Disabled by default, which keeps evaluation stateless and consistent with the other
+        /// server-side SDKs: cached flags are then only ever refreshed once <see cref="Duration"/>
+        /// has elapsed.
         /// </summary>
-        public bool RefreshOnTraitChanges { get; set; } = true;
+        public bool RefreshOnTraitChanges { get; set; }
     }
 }

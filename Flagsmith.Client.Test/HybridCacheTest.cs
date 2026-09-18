@@ -42,6 +42,11 @@ namespace Flagsmith.FlagsmithClientTest
             });
         }
 
+        private static FlagsmithClient CreateClientRefreshingOnTraitChanges(Mock<HttpClient> mockHttpClient)
+        {
+            return CreateClient(mockHttpClient, config => config.RefreshOnTraitChanges = true);
+        }
+
         private static List<ITrait> Traits(params (string Key, string Value)[] traits)
         {
             var result = new List<ITrait>();
@@ -180,7 +185,7 @@ namespace Flagsmith.FlagsmithClientTest
         {
             // Given
             var mockHttpClient = MockIdentityResponse();
-            var client = CreateClient(mockHttpClient);
+            var client = CreateClientRefreshingOnTraitChanges(mockHttpClient);
 
             // When
             await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
@@ -195,7 +200,7 @@ namespace Flagsmith.FlagsmithClientTest
         {
             // Given
             var mockHttpClient = MockIdentityResponse();
-            var client = CreateClient(mockHttpClient);
+            var client = CreateClientRefreshingOnTraitChanges(mockHttpClient);
 
             // When
             await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
@@ -210,7 +215,7 @@ namespace Flagsmith.FlagsmithClientTest
         {
             // Given
             var mockHttpClient = MockIdentityResponse();
-            var client = CreateClient(mockHttpClient);
+            var client = CreateClientRefreshingOnTraitChanges(mockHttpClient);
 
             // When
             await client.GetIdentityFlags(Identifier, new List<ITrait> { new Trait("foo", "bar") });
@@ -226,7 +231,7 @@ namespace Flagsmith.FlagsmithClientTest
             // Given: Flagsmith keeps traits it has already been told about, so dropping one from the
             // request cannot change the flags it returns.
             var mockHttpClient = MockIdentityResponse();
-            var client = CreateClient(mockHttpClient);
+            var client = CreateClientRefreshingOnTraitChanges(mockHttpClient);
 
             // When
             await client.GetIdentityFlags(Identifier, Traits(("foo", "bar"), ("baz", "qux")));
@@ -242,7 +247,7 @@ namespace Flagsmith.FlagsmithClientTest
         {
             // Given
             var mockHttpClient = MockIdentityResponse();
-            var client = CreateClient(mockHttpClient);
+            var client = CreateClientRefreshingOnTraitChanges(mockHttpClient);
 
             // When: the second call adds a trait, so it refreshes. The third call carries only the
             // trait from the first one, which the refreshed entry must still remember.
@@ -255,11 +260,22 @@ namespace Flagsmith.FlagsmithClientTest
         }
 
         [Fact]
-        public async Task TestIdentityFlagsStayCachedOnTraitChangesWhenRefreshOnTraitChangesIsDisabled()
+        public void TestRefreshOnTraitChangesIsOffByDefault()
+        {
+            Assert.False(new HybridCacheConfig().RefreshOnTraitChanges);
+            Assert.False(new HybridCacheConfig(CreateHybridCache()).RefreshOnTraitChanges);
+        }
+
+        /// <summary>
+        /// The default keeps evaluation stateless, matching the other server-side SDKs: a trait change
+        /// waits out the cache duration rather than invalidating the entry.
+        /// </summary>
+        [Fact]
+        public async Task TestIdentityFlagsStayCachedOnTraitChangesByDefault()
         {
             // Given
             var mockHttpClient = MockIdentityResponse();
-            var client = CreateClient(mockHttpClient, config => config.RefreshOnTraitChanges = false);
+            var client = CreateClient(mockHttpClient);
 
             // When
             await client.GetIdentityFlags(Identifier, Traits(("foo", "bar")));
