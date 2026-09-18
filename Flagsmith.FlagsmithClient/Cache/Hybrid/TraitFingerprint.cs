@@ -3,7 +3,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Flagsmith.Cache
+namespace Flagsmith.Cache.Hybrid
 {
     /// <summary>
     /// Compares the traits of an incoming request against the traits Flagsmith is known to hold, so

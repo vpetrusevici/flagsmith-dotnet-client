@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>netstandard2.0</TargetFramework>
+        <!-- net9.0 serializes cache entries with the System.Text.Json source generator;
+             netstandard2.0 falls back to Newtonsoft.Json. .NET 10 resolves the net9.0 assets. -->
+        <TargetFrameworks>netstandard2.0;net9.0</TargetFrameworks>
         <!-- 9 for init-only setters, required to build HybridCacheEntryOptions -->
         <LangVersion>9</LangVersion>
         <DefaultItemExcludes>$(DefaultItemExcludes);example/**;</DefaultItemExcludes>
@@ -21,6 +23,10 @@
         <NeutralLanguage>en-GB</NeutralLanguage>
         <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
     </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="ClientTest"/>
+    </ItemGroup>
 
     <ItemGroup>
         <!-- Carries the HybridCache abstraction only; the host supplies the implementation -->

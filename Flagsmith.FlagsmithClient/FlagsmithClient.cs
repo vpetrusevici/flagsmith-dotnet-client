@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Flagsmith.Cache;
+using Flagsmith.Cache.Hybrid;
 using Flagsmith.Extensions;
 using Flagsmith.Providers;
 using FlagsmithEngine;
@@ -282,13 +283,17 @@ namespace Flagsmith
                 var flags = JsonConvert.DeserializeObject<List<Flag>>(json)?.ToList<IFlag>();
                 return Flags.FromApiFlag(_analyticsProcessor, _config.DefaultFlagHandler, flags);
             }
-            catch (FlagsmithAPIError e)
+            catch (FlagsmithAPIError)
             {
                 if (Environment != null)
                 {
                     return this.GetEnvironmentFlagsFromLocalEvaluationContext();
                 }
-                return _config.DefaultFlagHandler != null ? Flags.FromApiFlag(_analyticsProcessor, _config.DefaultFlagHandler, null) : throw e;
+                if (_config.DefaultFlagHandler == null)
+                {
+                    throw;
+                }
+                return Flags.FromApiFlag(_analyticsProcessor, _config.DefaultFlagHandler, null);
             }
         }
 
@@ -304,13 +309,17 @@ namespace Flagsmith
 
                 return Flags.FromApiFlag(_analyticsProcessor, _config.DefaultFlagHandler, flags);
             }
-            catch (FlagsmithAPIError e)
+            catch (FlagsmithAPIError)
             {
                 if (Environment != null)
                 {
                     return this.GetIdentityFlagsFromLocalEvaluationContext(identity, traits);
                 }
-                return _config.DefaultFlagHandler != null ? Flags.FromApiFlag(_analyticsProcessor, _config.DefaultFlagHandler, null) : throw e;
+                if (_config.DefaultFlagHandler == null)
+                {
+                    throw;
+                }
+                return Flags.FromApiFlag(_analyticsProcessor, _config.DefaultFlagHandler, null);
             }
         }
 

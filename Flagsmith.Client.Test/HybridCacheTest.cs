@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Flagsmith.Cache.Hybrid;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -50,6 +51,60 @@ namespace Flagsmith.FlagsmithClientTest
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Cache entries are written by System.Text.Json on .NET 9 and later and by Newtonsoft.Json
+        /// below that, and a shared L2 cache can hold entries written by either. Pinning the wire
+        /// format here keeps the two readable by one another.
+        /// </summary>
+        [Fact]
+        public void TestCacheEntryWireFormatIsPinned()
+        {
+            // Given
+            var entry = new CachedFlagList
+            {
+                Flags =
+                {
+                    new CachedFlag
+                    {
+                        FeatureName = "some_feature",
+                        FeatureId = 1,
+                        Enabled = true,
+                        Value = "some-value"
+                    }
+                },
+                Traits = { ["foo"] = "bar" }
+            };
+
+            // When
+            var json = CachedFlagListSerializer.Serialize(entry);
+
+            // Then
+            Assert.Equal(
+                "{\"flags\":[{\"feature_name\":\"some_feature\",\"feature_id\":1,\"enabled\":true," +
+                "\"value\":\"some-value\"}],\"traits\":{\"foo\":\"bar\"}}",
+                json);
+        }
+
+        [Fact]
+        public void TestCacheEntryRoundTripsThroughTheSerializer()
+        {
+            // Given
+            var json =
+                "{\"flags\":[{\"feature_name\":\"some_feature\",\"feature_id\":1,\"enabled\":true," +
+                "\"value\":\"some-value\"}],\"traits\":{\"foo\":\"bar\"}}";
+
+            // When
+            var entry = CachedFlagListSerializer.Deserialize(json);
+
+            // Then
+            var flag = Assert.Single(entry.Flags);
+            Assert.Equal("some_feature", flag.FeatureName);
+            Assert.Equal(1, flag.FeatureId);
+            Assert.True(flag.Enabled);
+            Assert.Equal("some-value", flag.Value);
+            Assert.Equal("bar", Assert.Single(entry.Traits).Value);
         }
 
         [Fact]

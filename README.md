@@ -50,6 +50,16 @@ change the flags it returns, and neither can sending one that is unchanged.
 Set `RefreshOnTraitChanges = false` to opt out, in which case cached flags are only ever refreshed
 once `Duration` has elapsed.
 
+### Serialization
+
+Cache entries are written as JSON. On .NET 9 and later this goes through a source-generated
+`System.Text.Json` context, so no runtime reflection is involved and the path stays trimming and AOT
+friendly; `netstandard2.0` falls back to `Newtonsoft.Json`. Both emit the same JSON, so instances on
+different target frameworks can share one distributed cache.
+
+Nothing needs registering on your side either way: entries are stored as strings, so your
+`HybridCache` does not need a serializer for SDK types.
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](https://gist.github.com/kyle-ssg/c36a03aebe492e45cbd3eefb21cb0486) for details on our code of conduct, and the process for submitting pull requests

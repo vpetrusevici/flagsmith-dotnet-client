@@ -5,9 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Hybrid;
-using Newtonsoft.Json;
 
-namespace Flagsmith.Cache
+namespace Flagsmith.Cache.Hybrid
 {
     /// <summary>
     /// Stores flag lists in a <see cref="HybridCache"/> supplied by the host application.
@@ -95,26 +94,37 @@ namespace Flagsmith.Cache
 
         private static string Serialize(IFlags flags, Dictionary<string, string> traits)
         {
-            return JsonConvert.SerializeObject(new CachedFlagList
+            return CachedFlagListSerializer.Serialize(new CachedFlagList
             {
-                Flags = flags.AllFlags()?.Select(AsFlag).ToList() ?? new List<Flag>(),
+                Flags = flags.AllFlags()?.Select(ToCachedFlag).ToList() ?? new List<CachedFlag>(),
                 Traits = traits
             });
         }
 
         private static CachedFlagList Deserialize(string json)
         {
-            return JsonConvert.DeserializeObject<CachedFlagList>(json) ?? new CachedFlagList();
+            return CachedFlagListSerializer.Deserialize(json);
         }
 
-        private static Flag AsFlag(IFlag flag)
+        private static CachedFlag ToCachedFlag(IFlag flag)
         {
-            return flag as Flag ?? new Flag(new Feature(flag.GetFeatureName()), flag.Enabled, flag.Value);
+            return new CachedFlag
+            {
+                FeatureName = flag.GetFeatureName(),
+                FeatureId = (flag as Flag)?.GetFeatureId() ?? default,
+                Enabled = flag.Enabled,
+                Value = flag.Value
+            };
+        }
+
+        private static IFlag FromCachedFlag(CachedFlag flag)
+        {
+            return new Flag(new Feature(flag.FeatureName, flag.FeatureId), flag.Enabled, flag.Value);
         }
 
         private IFlags ToFlags(CachedFlagList entry)
         {
-            return _flagsFactory(entry.Flags.ToList<IFlag>());
+            return _flagsFactory(entry.Flags.Select(FromCachedFlag).ToList());
         }
     }
 }
